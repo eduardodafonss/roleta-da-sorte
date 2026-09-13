@@ -6,6 +6,9 @@ import Register from './pages/Register'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import AdminPanel from './pages/AdminPanel'
+import axios from 'axios'
+
+axios.defaults.baseURL = process.env.REACT_APP_API_URL || 'http://localhost:4000'
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>

@@ -2,6 +2,7 @@ import express from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { pool } from '../db.js';
+import { authMiddleware } from '../middleware/auth.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'replace_this_with_secure_secret';
@@ -30,6 +31,13 @@ router.post('/login', async (req,res)=>{
   if (!ok) return res.status(400).json({ error: 'Invalid credentials' });
   const token = jwt.sign({ userId: user.id, isAdmin: user.is_admin }, JWT_SECRET, { expiresIn: '7d' });
   res.json({ token, user: { id: user.id, phone: user.phone, name: user.name, is_admin: user.is_admin, balance: parseInt(user.balance_bigint||0,10) } });
+});
+
+// whoami
+router.get('/me', authMiddleware, async (req,res)=>{
+  // req.user is populated by authMiddleware
+  const u = req.user;
+  res.json({ id: u.id, phone: u.phone, name: u.name, is_admin: u.is_admin, balance: parseInt(u.balance_bigint||0,10), iban: u.iban, beneficiary_name: u.beneficiary_name });
 });
 
 export default router;

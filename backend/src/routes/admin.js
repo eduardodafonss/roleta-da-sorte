@@ -1,12 +1,10 @@
 import express from 'express';
 import { pool } from '../db.js';
 import { authMiddleware, adminMiddleware } from '../middleware/auth.js';
-import multer from 'multer';
-const upload = multer({ dest: 'uploads/' });
 
 const router = express.Router();
 
-// require admin for these routes
+// deposits endpoints already exist in previous version; keep them
 router.get('/deposits', authMiddleware, adminMiddleware, async (req,res)=>{
   const { rows } = await pool.query('SELECT d.*, u.phone, u.name FROM deposits d JOIN users u ON u.id = d.user_id ORDER BY d.created_at DESC');
   res.json(rows);
@@ -35,6 +33,39 @@ router.post('/deposits/:id/reject', authMiddleware, adminMiddleware, async (req,
 router.get('/users', authMiddleware, adminMiddleware, async (req,res)=>{
   const { rows } = await pool.query('SELECT id, phone, name, balance_bigint, is_admin, created_at FROM users ORDER BY created_at DESC');
   res.json(rows);
+});
+
+// withdrawals management
+router.get('/withdrawals', authMiddleware, adminMiddleware, async (req,res)=>{
+  const { rows } = await pool.query('SELECT w.*, u.phone, u.name FROM withdrawals w JOIN users u ON u.id = w.user_id ORDER BY w.created_at DESC');
+  res.json(rows);
+});
+
+router.post('/withdrawals/:id/approve', authMiddleware, adminMiddleware, async (req,res)=>{
+  const id = req.params.id;
+  const { rows } = await pool.query('SELECT * FROM withdrawals WHERE id=$1', [id]);
+  if (rows.length===0) return res.status(404).json({ error: 'Not found' });
+  const w = rows[0];
+  if (w.status !== 'pending') return res.status(400).json({ error: 'Already processed' });
+  try {
+    // mark approved and schedule processed_at after 1 hour
+    await pool.query("UPDATE withdrawals SET status=$1, processed_at = (now() + interval '1 hour'), processed_by=$2 WHERE id=$3", ['approved', req.user.id, id]);
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'DB error' }); }
+});
+
+router.post('/withdrawals/:id/reject', authMiddleware, adminMiddleware, async (req,res)=>{
+  const id = req.params.id;
+  const { rows } = await pool.query('SELECT * FROM withdrawals WHERE id=$1', [id]);
+  if (rows.length===0) return res.status(404).json({ error: 'Not found' });
+  const w = rows[0];
+  if (w.status !== 'pending') return res.status(400).json({ error: 'Already processed' });
+  try {
+    // reject and refund user
+    await pool.query('UPDATE withdrawals SET status=$1 WHERE id=$2', ['rejected', id]);
+    await pool.query('UPDATE users SET balance_bigint = balance_bigint + $1 WHERE id=$2', [w.amount_bigint, w.user_id]);
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'DB error' }); }
 });
 
 export default router;
